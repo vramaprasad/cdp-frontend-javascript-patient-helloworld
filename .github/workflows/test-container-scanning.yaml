@@ -1,0 +1,28 @@
+name: Test Container Scanning
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+  actions: read
+
+jobs:
+
+  build-image:
+    uses: mclm-dps/reusable-workflow-build-image/.github/workflows/build-image.yml@v1.0.1 # Add Release Version
+    secrets: inherit
+    with:
+      tags: ghcr.io/${{ github.repository }}/helloworld:${{ github.sha }} #Add App Name
+
+  push-gcr-image-d:
+    needs: build-image
+    uses: mclm-dps/reusable-workflow-push-gcr-image/.github/workflows/push-gcr-image.yml@developer/atreadwell
+    secrets: inherit
+    with:
+      image_src: ghcr.io/${{ github.repository }}/helloworld:${{ github.sha }} #Add App Name
+      image_dest: gcr.io/ml-fpt-cdh-aregistry-d-399b/helloworld:${{ github.sha }} #Add GCR Project ID and App Name
+      environment: development
+      gcr_project_id: ml-fpt-cdh-aregistry-d-399b #Add GCR Project ID
+      # disable_container_scanning_results: 'true'

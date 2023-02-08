@@ -1,0 +1,24 @@
+name: Create Release Branch and Candidate
+on:
+  workflow_dispatch:
+    inputs:
+      commitId:
+        description: 'The CommitId SHA used to create the Release Branch. Leave blank to use latest'
+        default: ''
+        type: string
+        required: false
+      createReleaseCandidate:
+        description: 'Create the initial release candidate from release branch?'
+        type: choice
+        options:
+            - true
+            - false
+        default: true
+
+jobs:
+  create-release-branch:
+    uses: mclm-dps/reusable-workflow-cloudrun-release-branch/.github/workflows/create-release-branch.yaml@v1.0.0
+    secrets: inherit
+    with:
+      commitId: ${{ inputs.commitId }}
+      createReleaseCandidate: ${{ inputs.createReleaseCandidate }}

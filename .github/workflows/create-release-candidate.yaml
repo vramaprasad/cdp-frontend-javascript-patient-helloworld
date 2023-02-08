@@ -1,0 +1,16 @@
+name: Create Release Candidate (BugFix)
+on:
+  workflow_dispatch:
+    inputs:
+      GitBranch:
+        description: 'The Git Branch to use for creating the release. Example: release/v1.0.x'
+        default: 'release/v0.0.x'
+        required: true
+        type: string
+
+jobs:
+  create-release-candidate:
+    uses: mclm-dps/reusable-workflow-cloudrun-release-candidate/.github/workflows/create-release-candidate.yaml@v1.0.0
+    secrets: inherit
+    with:
+      GitBranch: ${{ inputs.GitBranch }}

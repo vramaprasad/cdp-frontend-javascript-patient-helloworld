@@ -1,0 +1,15 @@
+name: Functional tests
+on:
+  workflow_dispatch:
+  
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+  actions: read
+
+jobs:
+
+  functional-tests:
+    uses: mclm-dps/reusable-workflow-cloudrun-gates/.github/workflows/cloudrun-quality-gates.yaml@functionaltests
+    secrets: inherit

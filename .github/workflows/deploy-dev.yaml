@@ -1,0 +1,94 @@
+name: Deploy to GCP DEV Environment
+on:
+  push:
+    paths-ignore:
+      - '.github/**'
+      - '*.md'
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions: write-all
+
+jobs:
+
+  build-image:
+    uses: mclm-dps/reusable-workflow-build-image/.github/workflows/build-image.yml@v1.0.1 # Add Release Version
+    secrets: inherit
+    with:
+      tags: ghcr.io/${{ github.repository }}/helloworld:${{ github.sha }} #Add App Name
+
+  push-gcr-image:
+    needs: build-image
+    uses: mclm-dps/reusable-workflow-push-gcr-image/.github/workflows/push-gcr-image.yml@v1.1.0 # Add Release Version
+    secrets: inherit
+    with:
+      image_src: ghcr.io/${{ github.repository }}/helloworld:${{ github.sha }} #Add App Name
+      image_dest: gcr.io/ml-fpt-cdh-aregistry-d-399b/helloworld:${{ github.sha }} #Add GCR Project ID and App Name
+      environment: development
+      gcr_project_id: ml-fpt-cdh-aregistry-d-399b #Add GCR Project ID
+
+  deploy-cloudrun-central:
+    needs: push-gcr-image
+    uses: mclm-dps/reusable-workflow-deploy-cloudrun/.github/workflows/deploy-cloudrun.yml@developer/atreadwell # Add Release Version
+    secrets: inherit
+    with:
+      enable_beta: true
+      enable_health_check: false
+      health_check_path: /
+      health_check_delay: 30
+      image_tag: ${{ github.sha }}
+      github_environment: development
+      gcp_environment: d
+      regions: >-
+        ["us-central1"]
+      app: helloworld # Add App Name
+      gcr_project_id: ml-fpt-cdh-aregistry-d-399b #Add GCR Project ID
+      gcp_project_id: ml-fpt-cdh-pat-app-d-d87d #Add GCP Project ID
+      flags: "--port=3000 --ingress=internal-and-cloud-load-balancing --vpc-connector=cdp-connector --vpc-egress=all-traffic --service-account=cdh-helloworld-d@ml-fpt-cdh-pat-app-d-d87d.iam.gserviceaccount.com" # Update with required flags
+      env_vars: |
+        REGION=us-central1
+      invoke_bindings: |
+        serviceAccount:cdh-helloworld3-d@ml-fpt-cdh-pat-app-d-d87d.iam.gserviceaccount.com
+
+  deploy-cloudrun-east:
+    needs: push-gcr-image
+    uses: mclm-dps/reusable-workflow-deploy-cloudrun/.github/workflows/deploy-cloudrun.yml@developer/atreadwell # Add Release Version
+    secrets: inherit
+    with:
+      enable_beta: true
+      enable_health_check: false
+      health_check_path: /
+      health_check_delay: 30
+      image_tag: ${{ github.sha }}
+      github_environment: development
+      gcp_environment: d
+      regions: >-
+        ["us-east1"]
+      app: helloworld # Add App Name
+      gcr_project_id: ml-fpt-cdh-aregistry-d-399b #Add GCR Project ID
+      gcp_project_id: ml-fpt-cdh-pat-app-d-d87d #Add GCP Project ID
+      flags: "--port=3000 --ingress=internal-and-cloud-load-balancing --vpc-connector=cdp-connector --vpc-egress=all-traffic --service-account=cdh-helloworld-d@ml-fpt-cdh-pat-app-d-d87d.iam.gserviceaccount.com" # Update with required flags
+      env_vars: |
+        REGION=us-east1
+      invoke_bindings: |
+        serviceAccount:cdh-helloworld3-d@ml-fpt-cdh-pat-app-d-d87d.iam.gserviceaccount.com
+
+  cloudrun-gates:
+    needs: [deploy-cloudrun-central, deploy-cloudrun-east]
+    uses: mclm-dps/reusable-workflow-cloudrun-gates/.github/workflows/cloudrun-quality-gates.yaml@v0.0.3 # Add Release Version
+    secrets: inherit
+    with:    
+      gcp_environment: d
+
+  promote-live:
+    needs: cloudrun-gates
+    uses: mclm-dps/reusable-workflow-cloudrun-promote/.github/workflows/cloudrun-promote-live.yaml@v1.1.0 # Add Release Version
+    secrets: inherit
+    with:
+      github_environment: development
+      gcp_environment: d
+      regions: >-
+        ["us-central1","us-east1"]
+      app: helloworld # Add App Name
+      gcp_project_id: ml-fpt-cdh-pat-app-d-d87d #Add GCP Project ID

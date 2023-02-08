@@ -1,0 +1,20 @@
+name: Quality Checks
+on:
+    pull_request:
+        branches:
+            - main
+    workflow_dispatch:
+
+permissions: write-all
+
+jobs:
+    quality-tests:
+        uses: mclm-dps/reusable-workflow-nodejs-quality-checks/.github/workflows/quality-checks.yml@v3.0.9
+        secrets: inherit
+        with:
+            test-build: false
+            lighthouse: false
+            bundle-analyzer: false
+            sonar-scan: false
+            security-scan: false
+            unit-tests: false
