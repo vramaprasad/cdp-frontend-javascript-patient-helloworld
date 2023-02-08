@@ -1,0 +1,173 @@
+name: Deploy CommitId to GCP STAGE Environment
+on:
+    workflow_dispatch:
+        inputs:
+            commitId:
+                description: 'The CommitId to Deploy.'
+                type: string
+                required: true
+
+permissions:
+    contents: read
+    id-token: write
+    packages: write
+    actions: read
+
+jobs:
+    build-image-live:
+        uses: mclm-dps/reusable-workflow-build-image/.github/workflows/build-image.yml@v1.0.6
+        secrets: inherit
+        with:
+            repo: gcr.io
+            tags: gcr.io/ml-fpt-cdh-aregistry-s-29f4/fe-patient:${{ inputs.commitId }}
+            environment: stage
+            release: ${{ inputs.commitId }}
+            build-args: |
+                ENV_FILE=.env.github.s
+                AUTH_URL=https://test.onlineservices.mayoclinic.org/patientportalstage/api/auth
+                BASE_PATH=patientportalstage
+
+    build-image-beta:
+        uses: mclm-dps/reusable-workflow-build-image/.github/workflows/build-image.yml@v1.0.6
+        secrets: inherit
+        with:
+            repo: gcr.io
+            tags: gcr.io/ml-fpt-cdh-aregistry-s-29f4/fe-patient-beta:${{ inputs.commitId }}
+            environment: stage
+            release: ${{ inputs.commitId }}
+            build-args: |
+                ENV_FILE=.env.github.s
+                AUTH_URL=https://test.onlineservices.mayoclinic.org/patientportalstagebeta/api/auth
+                BASE_PATH=patientportalstagebeta
+
+    deploy-cloudrun-central-beta:
+        needs: build-image-beta
+        uses: mclm-dps/reusable-workflow-deploy-cloudrun/.github/workflows/deploy-cloudrun.yml@v2.1.11
+        secrets: inherit
+        with:
+            enable_beta: false
+            enable_health_check: true
+            health_check_path: /patientportalstagebeta/api/health
+            health_check_period: 60
+            health_check_delay: 60
+            image_tag: ${{ inputs.commitId }}
+            github_environment: stage
+            gcp_environment: s
+            regions: >-
+                ["us-central1"]
+            app: fe-patient-beta # Add App Name
+            gcr_project_id: ml-fpt-cdh-aregistry-s-29f4 #Add GCR Project ID
+            gcp_project_id: ml-fpt-cdh-pat-app-s-eac8 #Add GCP Project ID
+            flags: '--cpu=2 --memory=2Gi --min-instances=1 --cpu-boost --port=3002 --ingress=internal-and-cloud-load-balancing --vpc-connector=cdp-connector --vpc-egress=all-traffic --service-account=cdh-fe-patient-s@ml-fpt-cdh-pat-app-s-eac8.iam.gserviceaccount.com'
+            env_vars: |
+                NEXTAUTH_URL=https://test.onlineservices.mayoclinic.org/patientportalstagebeta/api/auth
+                NEXT_PUBLIC_NEXTAUTH_URL=https://test.onlineservices.mayoclinic.org/patientportalstagebeta/api/auth
+                NEXT_PUBLIC_BASE_PATH=patientportalstagebeta
+            invoke_bindings: |
+                allUsers
+            secrets: |
+                AZURE_AD_B2C_CLIENT_ID=azure_ad_b2c_client_id:latest
+                AZURE_AD_B2C_CLIENT_SECRET=azure_ad_b2c_client_secret:latest
+
+    deploy-cloudrun-east-beta:
+        needs: build-image-beta
+        uses: mclm-dps/reusable-workflow-deploy-cloudrun/.github/workflows/deploy-cloudrun.yml@v2.1.11
+        secrets: inherit
+        with:
+            enable_beta: false
+            enable_health_check: true
+            health_check_path: /patientportalstagebeta/api/health
+            health_check_period: 60
+            health_check_delay: 60
+            image_tag: ${{ inputs.commitId }}
+            github_environment: stage
+            gcp_environment: s
+            regions: >-
+                ["us-east1"]
+            app: fe-patient-beta # Add App Name
+            gcr_project_id: ml-fpt-cdh-aregistry-s-29f4 #Add GCR Project ID
+            gcp_project_id: ml-fpt-cdh-pat-app-s-eac8 #Add GCP Project ID
+            flags: '--cpu=2 --memory=2Gi --min-instances=1 --cpu-boost --port=3002 --ingress=internal-and-cloud-load-balancing --vpc-connector=cdp-connector --vpc-egress=all-traffic --service-account=cdh-fe-patient-s@ml-fpt-cdh-pat-app-s-eac8.iam.gserviceaccount.com'
+            env_vars: |
+                NEXTAUTH_URL=https://test.onlineservices.mayoclinic.org/patientportalstagebeta/api/auth
+                NEXT_PUBLIC_NEXTAUTH_URL=https://test.onlineservices.mayoclinic.org/patientportalstagebeta/api/auth
+                NEXT_PUBLIC_BASE_PATH=patientportalstagebeta
+            invoke_bindings: |
+                allUsers
+            secrets: |
+                AZURE_AD_B2C_CLIENT_ID=azure_ad_b2c_client_id:latest
+                AZURE_AD_B2C_CLIENT_SECRET=azure_ad_b2c_client_secret:latest
+
+    cloudrun-gates:
+        needs: [deploy-cloudrun-central-beta, deploy-cloudrun-east-beta]
+        uses: mclm-dps/reusable-workflow-cloudrun-gates/.github/workflows/cloudrun-quality-gates.yaml@v0.0.7
+        secrets: inherit
+        with:
+            gcp_environment: s
+            functional-tests: false
+            environment-url: https://test.onlineservices.mayoclinic.org/patientportalstagebeta
+    
+    approve-stage-live:
+        needs: cloudrun-gates
+        with:
+            github_environment: stage-live
+            run: |
+                  echo "Approved Deployment to Stage Live"
+
+    deploy-cloudrun-central-live:
+        needs: [cloudrun-gates, approve-stage-live, build-image-live]
+        uses: mclm-dps/reusable-workflow-deploy-cloudrun/.github/workflows/deploy-cloudrun.yml@v2.1.11
+        secrets: inherit
+        with:
+            enable_beta: false
+            enable_health_check: true
+            health_check_path: /patientportalstage/api/health
+            health_check_period: 60
+            health_check_delay: 60
+            image_tag: ${{ inputs.commitId }}
+            github_environment: stage-live
+            gcp_environment: s
+            regions: >-
+                ["us-central1"]
+            app: fe-patient # Add App Name
+            gcr_project_id: ml-fpt-cdh-aregistry-s-29f4 #Add GCR Project ID
+            gcp_project_id: ml-fpt-cdh-pat-app-s-eac8 #Add GCP Project ID
+            flags: '--cpu=2 --memory=2Gi --min-instances=1 --cpu-boost --port=3002 --ingress=internal-and-cloud-load-balancing --vpc-connector=cdp-connector --vpc-egress=all-traffic --service-account=cdh-fe-patient-s@ml-fpt-cdh-pat-app-s-eac8.iam.gserviceaccount.com'
+            env_vars: |
+                NEXTAUTH_URL=https://test.onlineservices.mayoclinic.org/patientportalstage/api/auth
+                NEXT_PUBLIC_NEXTAUTH_URL=https://test.onlineservices.mayoclinic.org/patientportalstage/api/auth
+                NEXT_PUBLIC_BASE_PATH=patientportalstage
+            invoke_bindings: |
+                allUsers
+            secrets: |
+                AZURE_AD_B2C_CLIENT_ID=azure_ad_b2c_client_id:latest
+                AZURE_AD_B2C_CLIENT_SECRET=azure_ad_b2c_client_secret:latest
+
+    deploy-cloudrun-east-live:
+        needs: [cloudrun-gates, approve-stage-live, build-image-live]
+        uses: mclm-dps/reusable-workflow-deploy-cloudrun/.github/workflows/deploy-cloudrun.yml@v2.1.11
+        secrets: inherit
+        with:
+            enable_beta: false
+            enable_health_check: true
+            health_check_path: /patientportalstage/api/health
+            health_check_period: 60
+            health_check_delay: 60
+            image_tag: ${{ inputs.commitId }}
+            github_environment: stage-live
+            gcp_environment: s
+            regions: >-
+                ["us-east1"]
+            app: fe-patient # Add App Name
+            gcr_project_id: ml-fpt-cdh-aregistry-s-29f4 #Add GCR Project ID
+            gcp_project_id: ml-fpt-cdh-pat-app-s-eac8 #Add GCP Project ID
+            flags: '--cpu=2 --memory=2Gi --min-instances=1 --cpu-boost --port=3002 --ingress=internal-and-cloud-load-balancing --vpc-connector=cdp-connector --vpc-egress=all-traffic --service-account=cdh-fe-patient-s@ml-fpt-cdh-pat-app-s-eac8.iam.gserviceaccount.com'
+            env_vars: |
+                NEXTAUTH_URL=https://test.onlineservices.mayoclinic.org/patientportalstage/api/auth
+                NEXT_PUBLIC_NEXTAUTH_URL=https://test.onlineservices.mayoclinic.org/patientportalstage/api/auth
+                NEXT_PUBLIC_BASE_PATH=patientportalstage
+            invoke_bindings: |
+                allUsers
+            secrets: |
+                AZURE_AD_B2C_CLIENT_ID=azure_ad_b2c_client_id:latest
+                AZURE_AD_B2C_CLIENT_SECRET=azure_ad_b2c_client_secret:latest
